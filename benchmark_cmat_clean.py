@@ -157,8 +157,9 @@ def cmat_benchmark(llm):
     print(f"  CMAT v2.0 RESULTS  |  Acc: {acc:.1%}  |  {correct}/{total}")
     print(f"{'='*60}\n")
 
-    return kbench.assertions.assert_true(acc >= 0,
+    kbench.assertions.assert_true(acc >= 0,
         expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples")
+    return {"accuracy": float(acc)}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

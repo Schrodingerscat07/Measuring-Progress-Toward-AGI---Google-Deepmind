@@ -179,8 +179,9 @@ def eat_benchmark(llm):
     print(f"  Neutral: {neutral_acc:.1%}  |  Emotional: {emotional_acc:.1%}  |  Delta: {delta:+.1f}pp")
     print(f"{'='*60}\n")
 
-    return kbench.assertions.assert_true(acc >= 0,
+    kbench.assertions.assert_true(acc >= 0,
         expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples | Interference: {delta:+.1f}pp")
+    return {"accuracy": float(acc)}
 
 print("[OK] Cell 2 complete")
 
