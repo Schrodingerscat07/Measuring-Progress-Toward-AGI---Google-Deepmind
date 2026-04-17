@@ -190,6 +190,6 @@ print("[OK] Cell 2 complete")
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Run one model to bootstrap the task (required before %choose works)
-eat_benchmark.run(kbench.llms["google/gemma-3-4b"])
+# eat_benchmark.run(kbench.llms["google/gemma-3-4b"])
 
-# %choose eat_benchmark
+%choose eat_benchmark
