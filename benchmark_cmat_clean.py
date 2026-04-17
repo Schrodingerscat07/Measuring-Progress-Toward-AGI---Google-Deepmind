@@ -108,7 +108,7 @@ def single_cmat_task(llm, image_path, text_passage, question, correct_answer,
         resp = llm.prompt(prompt, image=img)
     model_response = resp.text if hasattr(resp, "text") else str(resp)
 
-    check_cross_modal(sample_id=id, correct_answer=correct_answer,
+    final_assertion = check_cross_modal(sample_id=id, correct_answer=correct_answer,
                       image_only_trap=image_only_trap, domain=domain,
                       integration_depth=integration_depth,
                       conflict_level=conflict_level,
@@ -126,6 +126,8 @@ def single_cmat_task(llm, image_path, text_passage, question, correct_answer,
         "conflict_level": conflict_level, "difficulty_cell": difficulty_cell,
     })
 
+    return final_assertion
+
 
 @kbench.task(
     name="CMAT-v2.0",
@@ -142,7 +144,7 @@ def cmat_benchmark(llm):
         single_cmat_task.evaluate(
             stop_condition=lambda r: len(r) == df.shape[0],
             max_attempts=1, llm=[llm], evaluation_data=df,
-            n_jobs=4, timeout=180, remove_run_files=True,
+            n_jobs=4, timeout=180, remove_run_files=False,
         )
 
     results = pd.DataFrame(SAMPLE_COLLECTOR)
@@ -155,9 +157,8 @@ def cmat_benchmark(llm):
     print(f"  CMAT v2.0 RESULTS  |  Acc: {acc:.1%}  |  {correct}/{total}")
     print(f"{'='*60}\n")
 
-    kbench.assertions.assert_true(acc >= 0,
+    return kbench.assertions.assert_true(acc >= 0,
         expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples")
-    return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════

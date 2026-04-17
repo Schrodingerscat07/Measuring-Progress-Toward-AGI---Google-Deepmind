@@ -125,7 +125,7 @@ def single_eat_task(llm, prompt, correct_answer, id, condition, task_type,
         resp = llm.prompt(prompt)
     model_response = resp.text if hasattr(resp, "text") else str(resp)
 
-    check_eat_answer(
+    final_assertion = check_eat_answer(
         sample_id=id, correct_answer=correct_answer,
         condition=condition, task_type=task_type,
         difficulty=difficulty, task_id=task_id,
@@ -141,6 +141,8 @@ def single_eat_task(llm, prompt, correct_answer, id, condition, task_type,
         "condition": condition, "task_type": task_type,
         "difficulty": difficulty,
     })
+
+    return final_assertion
 
 
 @kbench.task(
@@ -159,7 +161,7 @@ def eat_benchmark(llm):
         single_eat_task.evaluate(
             stop_condition=lambda r: len(r) == df.shape[0],
             max_attempts=1, llm=[llm], evaluation_data=df,
-            n_jobs=4, timeout=120, remove_run_files=True,
+            n_jobs=4, timeout=120, remove_run_files=False,
         )
 
     results = pd.DataFrame(SAMPLE_COLLECTOR)
@@ -177,9 +179,8 @@ def eat_benchmark(llm):
     print(f"  Neutral: {neutral_acc:.1%}  |  Emotional: {emotional_acc:.1%}  |  Delta: {delta:+.1f}pp")
     print(f"{'='*60}\n")
 
-    kbench.assertions.assert_true(acc >= 0,
+    return kbench.assertions.assert_true(acc >= 0,
         expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples | Interference: {delta:+.1f}pp")
-    return None
 
 print("[OK] Cell 2 complete")
 
