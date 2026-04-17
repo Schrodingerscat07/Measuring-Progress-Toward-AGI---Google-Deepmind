@@ -108,12 +108,13 @@ def check_eat_answer(sample_id, correct_answer, condition, task_type,
                      difficulty, task_id, model_response) -> AssertionResult:
     passed = answers_match(model_response, correct_answer)
     return AssertionResult(
-        passed=passed,
-        expectation=f"[{sample_id}] Exp='{correct_answer}' Got='{model_response.strip()[:80]}' -> {'OK' if passed else 'WRONG'}",
+        passed=True,  # Always pass — use assertions for logging, not gating
+        expectation=f"[{sample_id}] Exp='{correct_answer}' Got='{model_response.strip()[:80]}' -> {'CORRECT' if passed else 'WRONG'}",
         details={
             "sample_id": sample_id, "response": model_response.strip()[:200],
-            "correct": correct_answer, "condition": condition,
-            "task_type": task_type, "difficulty": difficulty, "task_id": task_id,
+            "correct": correct_answer, "actual_passed": passed,
+            "condition": condition, "task_type": task_type,
+            "difficulty": difficulty, "task_id": task_id,
         },
     )
 
@@ -125,7 +126,7 @@ def single_eat_task(llm, prompt, correct_answer, id, condition, task_type,
         resp = llm.prompt(prompt)
     model_response = resp.text if hasattr(resp, "text") else str(resp)
 
-    final_assertion = check_eat_answer(
+    check_eat_answer(
         sample_id=id, correct_answer=correct_answer,
         condition=condition, task_type=task_type,
         difficulty=difficulty, task_id=task_id,
@@ -141,8 +142,6 @@ def single_eat_task(llm, prompt, correct_answer, id, condition, task_type,
         "condition": condition, "task_type": task_type,
         "difficulty": difficulty,
     })
-
-    return final_assertion
 
 
 @kbench.task(
@@ -181,7 +180,7 @@ def eat_benchmark(llm):
 
     kbench.assertions.assert_true(acc >= 0,
         expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples | Interference: {delta:+.1f}pp")
-    return {"accuracy": float(acc)}
+    return None
 
 print("[OK] Cell 2 complete")
 

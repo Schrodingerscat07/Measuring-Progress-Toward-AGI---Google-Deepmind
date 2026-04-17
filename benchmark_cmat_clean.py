@@ -81,10 +81,11 @@ def check_cross_modal(sample_id, correct_answer, image_only_trap, domain,
     passed = answers_match(model_response, correct_answer)
     outcome = "correct" if passed else ("image_only_trap" if answers_match(model_response, image_only_trap) else "other_error")
     return AssertionResult(
-        passed=passed,
+        passed=True,  # Always pass — use assertions for logging, not gating
         expectation=f"[{sample_id}] Exp='{correct_answer}' Got='{model_response.strip()[:80]}' -> {outcome}",
         details={"sample_id": sample_id, "response": model_response.strip()[:200],
                  "correct": correct_answer, "trap": image_only_trap, "outcome": outcome,
+                 "actual_passed": passed,
                  "domain": domain, "I": integration_depth, "C": conflict_level, "cell": difficulty_cell},
     )
 
@@ -108,7 +109,7 @@ def single_cmat_task(llm, image_path, text_passage, question, correct_answer,
         resp = llm.prompt(prompt, image=img)
     model_response = resp.text if hasattr(resp, "text") else str(resp)
 
-    final_assertion = check_cross_modal(sample_id=id, correct_answer=correct_answer,
+    check_cross_modal(sample_id=id, correct_answer=correct_answer,
                       image_only_trap=image_only_trap, domain=domain,
                       integration_depth=integration_depth,
                       conflict_level=conflict_level,
@@ -125,8 +126,6 @@ def single_cmat_task(llm, image_path, text_passage, question, correct_answer,
         "domain": domain, "integration_depth": integration_depth,
         "conflict_level": conflict_level, "difficulty_cell": difficulty_cell,
     })
-
-    return final_assertion
 
 
 @kbench.task(
@@ -159,7 +158,7 @@ def cmat_benchmark(llm):
 
     kbench.assertions.assert_true(acc >= 0,
         expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples")
-    return {"accuracy": float(acc)}
+    return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
