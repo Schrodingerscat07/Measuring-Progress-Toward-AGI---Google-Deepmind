@@ -166,6 +166,6 @@ def cmat_benchmark(llm):
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Run one model to bootstrap the task (required before %choose works)
-# cmat_benchmark.run(kbench.llms["google/gemini-2.0-flash-lite"])
+cmat_benchmark.run(kbench.llms["google/gemini-2.0-flash-lite"])
 
 %choose cmat_benchmark
