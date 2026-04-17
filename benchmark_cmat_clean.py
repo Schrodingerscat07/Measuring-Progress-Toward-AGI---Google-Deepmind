@@ -13,7 +13,6 @@ import os, json, base64, re
 import pandas as pd
 import kaggle_benchmarks as kbench
 from kaggle_benchmarks.content_types import images
-from kaggle_benchmarks.assertions import AssertionResult
 
 os.environ["RENDER_SUBRUNS"] = "False"
 
@@ -72,28 +71,10 @@ def answers_match(pred, correct):
 # CELL 2: KBENCH TASK DEFINITIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
-SAMPLE_COLLECTOR = []
-
-@kbench.assertions.assertion_handler()
-def check_cross_modal(sample_id, correct_answer, image_only_trap, domain,
-                      integration_depth, conflict_level, difficulty_cell,
-                      model_response) -> AssertionResult:
-    passed = answers_match(model_response, correct_answer)
-    outcome = "correct" if passed else ("image_only_trap" if answers_match(model_response, image_only_trap) else "other_error")
-    return AssertionResult(
-        passed=True,  # Always pass — use assertions for logging, not gating
-        expectation=f"[{sample_id}] Exp='{correct_answer}' Got='{model_response.strip()[:80]}' -> {outcome}",
-        details={"sample_id": sample_id, "response": model_response.strip()[:200],
-                 "correct": correct_answer, "trap": image_only_trap, "outcome": outcome,
-                 "actual_passed": passed,
-                 "domain": domain, "I": integration_depth, "C": conflict_level, "cell": difficulty_cell},
-    )
-
-
 @kbench.task(store_task=False)
 def single_cmat_task(llm, image_path, text_passage, question, correct_answer,
                      image_only_trap, id, domain, integration_depth,
-                     conflict_level, difficulty_cell, **kw):
+                     conflict_level, difficulty_cell, **kw) -> bool:
     with open(image_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
     img = images.from_base64(b64, format="png")
@@ -109,23 +90,12 @@ def single_cmat_task(llm, image_path, text_passage, question, correct_answer,
         resp = llm.prompt(prompt, image=img)
     model_response = resp.text if hasattr(resp, "text") else str(resp)
 
-    check_cross_modal(sample_id=id, correct_answer=correct_answer,
-                      image_only_trap=image_only_trap, domain=domain,
-                      integration_depth=integration_depth,
-                      conflict_level=conflict_level,
-                      difficulty_cell=difficulty_cell,
-                      model_response=model_response)
-
     is_correct = answers_match(model_response, correct_answer)
-    hit_trap = (not is_correct) and answers_match(model_response, image_only_trap)
 
-    SAMPLE_COLLECTOR.append({
-        "id": id, "correct_answer": correct_answer,
-        "predicted": model_response.strip()[:200],
-        "is_correct": is_correct, "hit_image_trap": hit_trap,
-        "domain": domain, "integration_depth": integration_depth,
-        "conflict_level": conflict_level, "difficulty_cell": difficulty_cell,
-    })
+    kbench.assertions.assert_true(is_correct,
+        expectation=f"[{id}] Exp='{correct_answer}' Got='{model_response.strip()[:80]}'")
+
+    return is_correct
 
 
 @kbench.task(
@@ -136,29 +106,21 @@ def single_cmat_task(llm, image_path, text_passage, question, correct_answer,
         "corrections, arithmetic, conditionals, aggregation, and multi-hop reasoning."
     ),
 )
-def cmat_benchmark(llm):
-    SAMPLE_COLLECTOR.clear()
+def cmat_benchmark(llm) -> float:
+    runs = single_cmat_task.evaluate(
+        stop_condition=lambda r: len(r) == df.shape[0],
+        max_attempts=1, llm=[llm], evaluation_data=df,
+        n_jobs=4, timeout=180, remove_run_files=False,
+    )
 
-    with kbench.client.enable_cache():
-        single_cmat_task.evaluate(
-            stop_condition=lambda r: len(r) == df.shape[0],
-            max_attempts=1, llm=[llm], evaluation_data=df,
-            n_jobs=4, timeout=180, remove_run_files=False,
-        )
-
-    results = pd.DataFrame(SAMPLE_COLLECTOR)
-    total = len(results)
-    correct = int(results["is_correct"].sum()) if total > 0 else 0
-    acc = correct / total if total > 0 else 0.0
-    std = float(results["is_correct"].std()) if total > 0 else 0.0
+    results_df = runs.as_dataframe()
+    acc = float(results_df["result"].mean()) if len(results_df) > 0 else 0.0
 
     print(f"\n{'='*60}")
-    print(f"  CMAT v2.0 RESULTS  |  Acc: {acc:.1%}  |  {correct}/{total}")
+    print(f"  CMAT v2.0 RESULTS  |  Acc: {acc:.1%}")
     print(f"{'='*60}\n")
 
-    kbench.assertions.assert_true(acc >= 0,
-        expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples")
-    return None
+    return acc
 
 
 # ══════════════════════════════════════════════════════════════════════════════

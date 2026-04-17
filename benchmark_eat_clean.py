@@ -12,7 +12,6 @@ Only contains: data loading + task definitions + %choose
 import os, json, re
 import pandas as pd
 import kaggle_benchmarks as kbench
-from kaggle_benchmarks.assertions import AssertionResult
 
 os.environ["RENDER_SUBRUNS"] = "False"
 
@@ -101,47 +100,19 @@ print("[OK] Cell 1 complete")
 # CELL 2: KBENCH TASK DEFINITIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
-SAMPLE_COLLECTOR = []
-
-@kbench.assertions.assertion_handler()
-def check_eat_answer(sample_id, correct_answer, condition, task_type,
-                     difficulty, task_id, model_response) -> AssertionResult:
-    passed = answers_match(model_response, correct_answer)
-    return AssertionResult(
-        passed=True,  # Always pass — use assertions for logging, not gating
-        expectation=f"[{sample_id}] Exp='{correct_answer}' Got='{model_response.strip()[:80]}' -> {'CORRECT' if passed else 'WRONG'}",
-        details={
-            "sample_id": sample_id, "response": model_response.strip()[:200],
-            "correct": correct_answer, "actual_passed": passed,
-            "condition": condition, "task_type": task_type,
-            "difficulty": difficulty, "task_id": task_id,
-        },
-    )
-
-
 @kbench.task(store_task=False)
 def single_eat_task(llm, prompt, correct_answer, id, condition, task_type,
-                    difficulty, task_id, **kw):
+                    difficulty, task_id, **kw) -> bool:
     with kbench.chats.new(f"eat_{id}"):
         resp = llm.prompt(prompt)
     model_response = resp.text if hasattr(resp, "text") else str(resp)
 
-    check_eat_answer(
-        sample_id=id, correct_answer=correct_answer,
-        condition=condition, task_type=task_type,
-        difficulty=difficulty, task_id=task_id,
-        model_response=model_response,
-    )
-
     is_correct = answers_match(model_response, correct_answer)
 
-    SAMPLE_COLLECTOR.append({
-        "id": id, "task_id": task_id, "correct_answer": correct_answer,
-        "predicted": model_response.strip()[:200],
-        "is_correct": is_correct,
-        "condition": condition, "task_type": task_type,
-        "difficulty": difficulty,
-    })
+    kbench.assertions.assert_true(is_correct,
+        expectation=f"[{id}] Exp='{correct_answer}' Got='{model_response.strip()[:80]}'")
+
+    return is_correct
 
 
 @kbench.task(
@@ -153,34 +124,21 @@ def single_eat_task(llm, prompt, correct_answer, id, condition, task_type,
         "compared to a neutral control."
     ),
 )
-def eat_benchmark(llm):
-    SAMPLE_COLLECTOR.clear()
+def eat_benchmark(llm) -> float:
+    runs = single_eat_task.evaluate(
+        stop_condition=lambda r: len(r) == df.shape[0],
+        max_attempts=1, llm=[llm], evaluation_data=df,
+        n_jobs=4, timeout=120, remove_run_files=False,
+    )
 
-    with kbench.client.enable_cache():
-        single_eat_task.evaluate(
-            stop_condition=lambda r: len(r) == df.shape[0],
-            max_attempts=1, llm=[llm], evaluation_data=df,
-            n_jobs=4, timeout=120, remove_run_files=False,
-        )
-
-    results = pd.DataFrame(SAMPLE_COLLECTOR)
-    total = len(results)
-    correct = int(results["is_correct"].sum()) if total > 0 else 0
-    acc = correct / total if total > 0 else 0.0
-    std = float(results["is_correct"].std()) if total > 0 else 0.0
-
-    neutral_acc = results[results["condition"] == "neutral"]["is_correct"].mean() if total > 0 else 0
-    emotional_acc = results[results["condition"] != "neutral"]["is_correct"].mean() if total > 0 else 0
-    delta = (neutral_acc - emotional_acc) * 100
+    results_df = runs.as_dataframe()
+    acc = float(results_df["result"].mean()) if len(results_df) > 0 else 0.0
 
     print(f"\n{'='*60}")
-    print(f"  EAT-Bench v1.0 RESULTS  |  Acc: {acc:.1%}  |  {correct}/{total}")
-    print(f"  Neutral: {neutral_acc:.1%}  |  Emotional: {emotional_acc:.1%}  |  Delta: {delta:+.1f}pp")
+    print(f"  EAT-Bench v1.0 RESULTS  |  Acc: {acc:.1%}")
     print(f"{'='*60}\n")
 
-    kbench.assertions.assert_true(acc >= 0,
-        expectation=f"Accuracy: {acc:.4f} +/- {std:.4f} on {total} samples | Interference: {delta:+.1f}pp")
-    return None
+    return acc
 
 print("[OK] Cell 2 complete")
 
